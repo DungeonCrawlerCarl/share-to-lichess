@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; img-src 'self' blob: data:; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta name="referrer" content="no-referrer">
+<title>Share to Lichess</title>
+<meta name="description" content="Share a chess puzzle photo, scan the board on your device, and open the position on the Lichess analysis board. Free, no account, no upload, no scan limit.">
+<meta name="theme-color" content="#262421">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icons/icon-192.png">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<link rel="stylesheet" href="./styles.css">
+<script type="importmap">
+{
+  "imports": {
+    "@scoriiu/fenshot": "./vendor/fenshot/index.js",
+    "onnxruntime-web/wasm": "./ort/ort.wasm.min.mjs"
+  }
+}
+</script>
+</head>
+<body>
+<header>
+  <h1>Share to Lichess</h1>
+  <p class="tagline">Share a puzzle photo from WhatsApp or any app, scan the board on your device, open it on Lichess.</p>
+  <p class="free">Free. No account. No upload, nothing leaves your device. No scan limit.</p>
+</header>
+<main>
+  <section id="howto" aria-label="How to use">
+    <h2>How to use it</h2>
+    <ol>
+      <li><strong>Install this app</strong> in Chrome on Android: menu (⋮) → <strong>Add to Home screen</strong> / <strong>Install app</strong>. It then appears in the Android share sheet as <strong>Lichess Share</strong>.</li>
+      <li>In WhatsApp, long-press a puzzle photo → <strong>Share</strong> → <strong>Lichess Share</strong>. The photo is scanned here, on your phone.</li>
+      <li>Compare the photo with the reconstructed board, fix any wrong square, tap <strong>I checked this board</strong>, then <strong>Open in Lichess</strong>.</li>
+    </ol>
+    <p class="note">Works best on 2D screenshots and diagrams (Lichess, chess.com, books, chat photos of a screen). Photos of a real wooden board taken at an angle are hit and miss; a straight overhead shot has the best chance. Accuracy on clean Lichess / chess.com renders is about 98% of positions; on real phone screenshots of other screens it is lower, so always check the board.</p>
+    <p class="note">Side to move is read from the last-move highlight when the photo shows one (two tinted squares). Castling is assumed from king and rook on their home squares and labelled assumed, never proven. Move counters default to 0 and 1. The FEN goes to Lichess in the link URL when you tap Open in Lichess; the image itself stays on your device.</p>
+    <p class="note" id="sw-status">Service worker: checking…</p>
+  </section>
+  <section id="scan" aria-label="Scan a position">
+    <h2>Scan a position</h2>
+    <div id="dropzone" tabindex="0">
+      <p><strong>Choose an image or paste one (Ctrl+V)</strong>, or drop a board image here.</p>
+      <input type="file" id="file-input" accept="image/*,.jpg,.jpeg,.png,.webp">
+      <p class="note">The image is read in your browser only. It is never uploaded anywhere.</p>
+    </div>
+    <div id="preview-wrap" hidden>
+      <h3>Your photo <span class="note">(drag on it to select a crop, then use “Scan cropped area”)</span></h3>
+      <div id="preview-box">
+        <img id="preview" alt="Shared chess board image">
+        <div id="crop-overlay"></div>
+      </div>
+    </div>
+    <p id="status" role="status">Ready. Share a photo to this app, or choose one above.</p>
+    <p id="confidence" hidden></p>
+    <p id="low-confidence" hidden></p>
+    <p id="orientation-warning" class="warn" hidden></p>
+    <p id="orientation-prompt" class="warn" hidden>Black is at the bottom of this board. Is Black to move?
+      <button id="orientation-black-move" type="button">Black to move</button>
+      <button id="orientation-keep-white" type="button">Keep White to move</button>
+    </p>
+    <button id="scan-btn" type="button" disabled>Scan this image</button>
+    <div id="fallback" hidden>
+      <h3>Scan trouble? Try a retry</h3>
+      <p id="fallback-why"></p>
+      <div class="controls">
+        <button id="rotate-scan-btn" type="button">Rotate 90° and re-scan</button>
+        <button id="contrast-scan-btn" type="button">Boost contrast and re-scan</button>
+        <button id="crop-scan-btn" type="button" disabled>Scan cropped area</button>
+      </div>
+      <p class="note">Not supported (until tested): partial boards with a rank or file cut off, photos rotated 90°, opaque arrows covering pieces, and 3D piece sets. Crop to the full flat board, rotate it upright, and retry, or set the position by hand in the editor below.</p>
+    </div>
+  </section>
+  <section id="review" aria-label="Check the scanned board" hidden>
+    <h2>Check the board</h2>
+    <p>Your photo is above. Below is the board as scanned. They must match, square by square. Highlighted squares from the last move are outlined in yellow.</p>
+    <div id="review-board" class="mini-board" aria-label="Reconstructed board"></div>
+    <p id="turn-source" class="note"></p>
+    <button id="confirm-btn" type="button">I checked this board</button>
+  </section>
+  <section id="editor" aria-label="Board editor">
+    <h2>Board editor <span class="note">(tap a palette piece, then a square; or use Move / Erase)</span></h2>
+    <div id="board" role="grid" aria-label="Chess board"></div>
+    <div id="palette" aria-label="Piece palette"></div>
+    <div class="controls">
+      <button id="tool-move" type="button" class="tool active">Move</button>
+      <button id="tool-erase" type="button" class="tool">Erase</button>
+      <button id="flip-btn" type="button">Flip 180</button>
+      <button id="flip180-btn" type="button">Flip board</button>
+      <button id="rotate90-btn" type="button">Rotate image 90° and re-scan</button>
+      <button id="clear-btn" type="button">Clear</button>
+      <button id="start-btn" type="button">Start position</button>
+      <button id="sample-btn" type="button">Sample puzzle</button>
+    </div>
+    <div class="controls">
+      <label for="fen-input">FEN:</label>
+      <input type="text" id="fen-input" size="60" placeholder="Paste a FEN here">
+      <button id="fen-load-btn" type="button">Load FEN</button>
+    </div>
+  </section>
+  <section id="preflight" aria-label="Before opening in Lichess">
+    <h2>Before opening in Lichess</h2>
+    <div class="preflight-grid">
+      <div><strong>Side to move:</strong>
+        <button id="turn-white" type="button" class="turn active">White</button>
+        <button id="turn-black" type="button" class="turn">Black</button>
+        <span id="turn-source-2" class="note"></span>
+      </div>
+      <div><strong>Orientation:</strong> <span id="orientation-out">White at bottom</span></div>
+      <div><strong>Castling:</strong> <span id="castling-chip" class="chip">Off (–)</span>
+        <span class="note">assumed from home squares only, never proven</span>
+        <label><input type="checkbox" id="castle-K"> K</label>
+        <label><input type="checkbox" id="castle-Q"> Q</label>
+        <label><input type="checkbox" id="castle-k"> k</label>
+        <label><input type="checkbox" id="castle-q"> q</label>
+        <button id="inferred-castling-btn" type="button">Use inferred castling (assumed)</button>
+      </div>
+      <div><strong>En passant:</strong>
+        <select id="ep-select" aria-label="En passant square"></select>
+        <span id="ep-source" class="note"></span>
+      </div>
+      <div><strong>Legality:</strong> <span id="legality-status" class="bad">No position yet.</span></div>
+    </div>
+    <p id="turn-warning" class="warn" hidden></p>
+    <p class="note">Side to move and castling cannot be proved from a photo. Defaults are White to move and no castling unless the last-move highlight or the board says otherwise; tap to change. Move counters are 0 and 1.</p>
+  </section>
+  <section id="result" aria-label="Result">
+    <h2>Position</h2>
+    <p><code id="fen-out">8/8/8/8/8/8/8/8 w - - 0 1</code></p>
+    <p id="gate-note" class="note">Compare the photo with the reconstructed board, fix any wrong square, then tap “I checked this board”.</p>
+    <div class="controls">
+      <button id="lichess-open-btn" type="button" class="big" disabled>Open in Lichess</button>
+      <a id="editor-link" href="https://lichess.org/editor/8/8/8/8/8/8/8/8_w_-_-_0_1" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Open in Lichess Editor</a>
+      <button id="copy-fen-btn" type="button">Copy FEN</button>
+    </div>
+    <p class="note">“Open in Lichess” opens the Lichess analysis board. Engine off on arrival, tap the Lichess engine toggle to turn it on. That is the web board; the mobile app was not tested for this. Illegal positions open in the Lichess Editor instead. Always glance at the board before analysing: one misread piece changes the position.</p>
+  </section>
+</main>
+<footer>
+  <p>Scanner: <a href="https://github.com/scoriiu/fenshot" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">fenshot</a> (MIT) by Kibitzo, model <code>chess-tiles-v2.onnx</code> (1.3&nbsp;MB), running on-device via onnxruntime-web. Last-move highlight reading follows the Chessvision Reddit bot and Chess Best Move concepts. Pieces: Lichess cburnett set. Not affiliated with Lichess.</p>
+</footer>
+<script type="module" src="./app.js"></script>
+</body>
+</html>
