@@ -176,7 +176,7 @@ export function createRecognizer(options) {
             // The pure-wasm build: the default package entry is the JSEP
             // (webgpu) bundle which requests ort-wasm-*.jsep.mjs at runtime;
             // only the plain wasm pair is required here.
-            ortPromise = import("onnxruntime-web/wasm").then((ort) => {
+            ortPromise = import("../ort/ort.wasm.min.mjs").then((ort) => {
                 ort.env.wasm.wasmPaths = options.wasmPaths;
                 return ort;
             });

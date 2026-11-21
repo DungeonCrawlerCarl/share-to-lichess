@@ -8,7 +8,7 @@ import {
   resolveOrientation,
   inferCastling,
   CONFIDENCE_FLOOR,
-} from "@scoriiu/fenshot";
+} from "./vendor/fenshot/index.js";
 import {
   detectHighlight,
   orientSquare,
