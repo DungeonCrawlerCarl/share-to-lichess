@@ -33,7 +33,10 @@ function imageToGray(img) {
     const scale = Math.min(1, MAX_DETECT_DIM / Math.max(w, h));
     const cw = Math.round(w * scale);
     const ch = Math.round(h * scale);
-    const canvas = document.createElement("canvas");
+    // document does not exist inside a Web Worker; OffscreenCanvas does.
+    const canvas = typeof document !== "undefined"
+        ? document.createElement("canvas")
+        : new OffscreenCanvas(cw, ch);
     canvas.width = cw;
     canvas.height = ch;
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -176,7 +179,7 @@ export function createRecognizer(options) {
             // The pure-wasm build: the default package entry is the JSEP
             // (webgpu) bundle which requests ort-wasm-*.jsep.mjs at runtime;
             // only the plain wasm pair is required here.
-            ortPromise = import("../ort/ort.wasm.min.mjs").then((ort) => {
+            ortPromise = import("../../ort/ort.wasm.min.mjs").then((ort) => {
                 ort.env.wasm.wasmPaths = options.wasmPaths;
                 return ort;
             });
