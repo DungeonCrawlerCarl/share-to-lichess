@@ -9,8 +9,12 @@
  * immediate deletion are what keep one user's share from leaking into
  * another repo on the same origin.
  *
- * Also precaches the app shell, the fenshot model and the onnxruntime
- * wasm files on install (all self-hosted, nothing from a CDN).
+ * Also precaches the app shell on install (all self-hosted, nothing from
+ * a CDN). The fenshot model and the onnxruntime wasm files are NOT
+ * precached: they are about 16 MB, and precaching them made the service
+ * worker slow to activate, so a first share could reach GitHub Pages
+ * before the worker was controlling the page and get a 405. They are
+ * fetched on demand on the first scan instead.
  * All non-share requests pass through to the network untouched.
  */
 const CACHE_NAME = "share-to-lichess";
@@ -31,10 +35,6 @@ const PRECACHE = [
   "./manifest.webmanifest",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
-  "./models/chess-tiles-v2.onnx",
-  "./ort/ort.wasm.min.mjs",
-  "./ort/ort-wasm-simd-threaded.mjs",
-  "./ort/ort-wasm-simd-threaded.wasm",
 ];
 
 self.addEventListener("install", (event) => {
