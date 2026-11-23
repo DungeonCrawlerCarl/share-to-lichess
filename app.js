@@ -532,7 +532,7 @@ function showPreview(blob) {
   $("review").hidden = false;
   $("scan-btn").disabled = false;
 }
-async function scanBlob(blob, label) {
+async function scanBlob(blob, label, direct) {
   if (!blob) return;
   currentBlob = blob;
   showPreview(blob);
@@ -547,6 +547,19 @@ async function scanBlob(blob, label) {
       return;
     }
     await applyScan(scan, via);
+    // Manual upload, direct to Lichess: a confident, legal read opens
+    // Lichess straight away, no editor stop. Anything doubtful stays
+    // here in the editor instead. A plain navigation (not window.open)
+    // so the browser cannot block it as a popup after the async scan.
+    if (direct && scan.reliable) {
+      const w = scan.corners.x1 - scan.corners.x0, h = scan.corners.y1 - scan.corners.y0;
+      const aspectDev = Math.abs(w - h) / Math.max(w, h);
+      const tilePx = Math.min(w, h) / 8;
+      if (aspectDev <= 0.08 && tilePx >= 32 && legalityIssues().length === 0) {
+        setStatus("Position read. Opening in Lichess…");
+        location.assign(lichessAnalysisUrl(fenFromState()));
+      }
+    }
   } catch (err) {
     console.error(err);
     setStatus(`Scan failed: ${err && err.message ? err.message : err}. The photo is shown next to the editor below: set the position by hand, or try the retries.`);
@@ -735,26 +748,26 @@ async function loadSharedImage() {
 // ---- wiring ----
 $("file-input").addEventListener("change", (e) => {
   const f = e.target.files && e.target.files[0];
-  if (f) void scanBlob(f, "uploaded image");
+  if (f) void scanBlob(f, "uploaded image", true);
 });
 const dz = $("dropzone");
 ["dragover", "dragenter"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("drag"); }));
 ["dragleave", "drop"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("drag"); }));
 dz.addEventListener("drop", (e) => {
   const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-  if (f) void scanBlob(f, "dropped image");
+  if (f) void scanBlob(f, "dropped image", true);
 });
 document.addEventListener("paste", (e) => {
   const items = (e.clipboardData && e.clipboardData.items) || [];
   for (const item of items) {
     if (item.type && item.type.startsWith("image/")) {
       const f = item.getAsFile();
-      if (f) void scanBlob(f, "pasted image");
+      if (f) void scanBlob(f, "pasted image", true);
       break;
     }
   }
 });
-$("scan-btn").addEventListener("click", () => { if (currentBlob) void scanBlob(currentBlob, "image"); });
+$("scan-btn").addEventListener("click", () => { if (currentBlob) void scanBlob(currentBlob, "image", true); });
 $("tool-move").addEventListener("click", () => { selectedPal = null; selectedSquare = -1; syncTools(); });
 $("tool-erase").addEventListener("click", () => { selectedPal = "erase"; selectedSquare = -1; syncTools(); });
 $("flip-btn").addEventListener("click", () => { flipBoard180(); });
@@ -859,4 +872,5 @@ if (navigator.storage && navigator.storage.persist) {
 }
 
 loadFenString(EMPTY_FEN);
+syncTools(); // render the piece palette on load; before this it only appeared after tapping Move / Erase.
 void loadSharedImage();
