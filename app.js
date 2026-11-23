@@ -738,7 +738,9 @@ async function loadSharedImage() {
     // Delete immediately, before inference finishes: Cache Storage is
     // origin-scoped, so a leftover share could be read by another page.
     await cache.delete(entryUrl);
-    await scanBlob(blob, "shared photo");
+    // Shared photos go direct to Lichess too: no Scan button, no editor
+    // stop, on a confident legal read. Anything doubtful stays here.
+    await scanBlob(blob, "shared photo", true);
   } catch (err) {
     console.error(err);
     setStatus("Could not read the shared photo. Choose an image below, or paste one.");
